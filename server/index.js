@@ -323,32 +323,52 @@ app.post('/api/cells/batch', (req, res) => {
        updated_at = CURRENT_TIMESTAMP`
   );
 
-  db.serialize(() => {
-    db.run('BEGIN TRANSACTION');
+  // serialize() 대신 직접 트랜잭션 관리
+  db.run('BEGIN TRANSACTION', (beginErr) => {
+    if (beginErr) {
+      return res.status(500).json({ error: beginErr.message });
+    }
 
-    cells.forEach(cell => {
-      stmt.run([
-        cell.worksheet_id,
-        cell.row_index,
-        cell.col_index,
-        cell.value,
-        cell.formula || null,
-        cell.style || null
-      ]);
-    });
+    let completed = 0;
+    let hasError = false;
 
-    stmt.finalize((err) => {
-      if (err) {
-        db.run('ROLLBACK');
-        return res.status(500).json({ error: err.message });
-      }
+    cells.forEach((cell, index) => {
+      stmt.run(
+        [
+          cell.worksheet_id,
+          cell.row_index,
+          cell.col_index,
+          cell.value,
+          cell.formula || null,
+          cell.style || null
+        ],
+        (err) => {
+          if (err && !hasError) {
+            hasError = true;
+            db.run('ROLLBACK');
+            return res.status(500).json({ error: err.message });
+          }
 
-      db.run('COMMIT', (commitErr) => {
-        if (commitErr) {
-          return res.status(500).json({ error: commitErr.message });
+          completed++;
+
+          // 모든 셀 처리 완료
+          if (completed === cells.length && !hasError) {
+            stmt.finalize((finalizeErr) => {
+              if (finalizeErr) {
+                db.run('ROLLBACK');
+                return res.status(500).json({ error: finalizeErr.message });
+              }
+
+              db.run('COMMIT', (commitErr) => {
+                if (commitErr) {
+                  return res.status(500).json({ error: commitErr.message });
+                }
+                res.json({ message: `${cells.length}개의 셀이 저장되었습니다.` });
+              });
+            });
+          }
         }
-        res.json({ message: `${cells.length}개의 셀이 저장되었습니다.` });
-      });
+      );
     });
   });
 });

@@ -2,6 +2,24 @@ import { createClient } from "@liveblocks/client";
 import { createRoomContext } from "@liveblocks/react";
 
 /**
+ * Liveblocks Configuration
+ *
+ * Presence: Real-time user state (cursor, selection, etc.)
+ *   - cursor: { x: number, y: number } | null
+ *   - selectedCell: { row: number, col: number } | null
+ *
+ * Storage: Persistent room data (spreadsheet cells)
+ *   - cells: LiveMap<string, LiveCell>
+ *
+ * LiveCell structure:
+ *   - value: any
+ *   - formula: string | null
+ *   - style: any | null
+ *   - updatedBy: string (user ID)
+ *   - updatedAt: number (timestamp)
+ */
+
+/**
  * Create Liveblocks client with authentication endpoint
  * This uses your server's secret key for secure authentication
  *
@@ -51,17 +69,17 @@ const client = createClient({
   },
 
   // Optional: Throttle value in ms (default: 100)
-  // throttle: 100,
+  throttle: 16, // 60fps for smooth updates
 
   // Optional: Lost connection timeout in ms (default: 5000)
-  // lostConnectionTimeout: 5000,
+  lostConnectionTimeout: 5000,
 });
 
-// Create a Liveblocks client with presence type definition
-// Presence will hold the cursor position for each user
+// Create a Liveblocks client with presence and storage
 export const {
   suspense: {
     RoomProvider,
+    useRoom,
     useOthers,
     useMyPresence,
     useUpdateMyPresence,
@@ -69,11 +87,8 @@ export const {
     useOthersMapped,
     useOthersConnectionIds,
     useOther,
+    useStorage,
+    useMutation,
+    useBatch,
   },
-} = createRoomContext(client);
-
-// Also export useMyPresence from the main context for non-suspense usage if needed
-export const {
-  RoomProvider: RoomProviderNonSuspense,
-  useMyPresence: useMyPresenceNonSuspense,
 } = createRoomContext(client);

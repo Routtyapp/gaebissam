@@ -1,18 +1,33 @@
 import "./App.css";
-import * as GC from "@mescius/spread-sheets";
-import { SpreadSheets, Worksheet } from "@mescius/spread-sheets-react";
-import "@mescius/spread-sheets/styles/gc.spread.sheets.excel2013white.css";
-import "@mescius/spread-sheets-io";
 import { useState, useRef } from "react";
-import { saveCell, saveWorkbook, loadWorkbook } from "./api/spreadsheetApi";
-import { RoomProvider } from "./liveblocks.config";
-import { ClientSideSuspense } from "@liveblocks/react/suspense";
-import { Room } from "./Room";
-import { getWorkbookRoomId } from "./utils/roomUtils";
+
+// SpreadJS Core - 반드시 먼저 import
+import * as GC from "@mescius/spread-sheets";
+import "@mescius/spread-sheets/styles/gc.spread.sheets.excel2013white.css";
+
+// SpreadJS IO - Designer보다 먼저 import (중요!)
+import "@mescius/spread-sheets-io";
+
+// SpreadJS Designer - IO 다음에 import
 import "@mescius/spread-sheets-designer-resources-ko";
 import { Designer } from "@mescius/spread-sheets-designer-react";
 import "@mescius/spread-sheets-designer/styles/gc.spread.sheets.designer.min.css";
-import "@mescius/spread-sheets/styles/gc.spread.sheets.excel2013white.css";
+
+// SpreadJS React Components
+import { SpreadSheets, Worksheet } from "@mescius/spread-sheets-react";
+
+// Liveblocks
+import { RoomProvider } from "./liveblocks.config";
+import { ClientSideSuspense } from "@liveblocks/react/suspense";
+import { LiveMap } from "@liveblocks/client";
+
+// Custom Components
+import { Room } from "./Room";
+import { CollaborativeSpreadsheet } from "./components/CollaborativeSpreadsheet";
+
+// API & Utils
+import { saveCell, saveWorkbook, loadWorkbook } from "./api/spreadsheetApi";
+import { getWorkbookRoomId } from "./utils/roomUtils";
 
 function App() {
   const [spreadInstance, setSpreadInstance] = useState(null);
@@ -478,12 +493,22 @@ function App() {
   const roomId = getWorkbookRoomId(currentWorkbookId);
 
   return (
-    <RoomProvider id={roomId} initialPresence={{ cursor: null }}>
+    <RoomProvider
+      id={roomId}
+      initialPresence={{
+        cursor: null,
+        selectedCell: null,
+      }}
+      initialStorage={() => ({
+        cells: new LiveMap(),
+      })}
+    >
       <ClientSideSuspense fallback={<div>Loading...</div>}>
         <Room workbookId={currentWorkbookId} />
-        <Designer
-          styleInfo={{ width: "1500px", height: "90vh" }}
-          designerInitialized={(designer) => initDesigner(designer)}
+        <CollaborativeSpreadsheet
+          currentWorkbookId={currentWorkbookId}
+          currentWorksheetId={currentWorksheetId}
+          initDesigner={initDesigner}
         />
       </ClientSideSuspense>
 

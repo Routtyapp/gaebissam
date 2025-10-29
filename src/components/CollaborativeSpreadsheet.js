@@ -8,6 +8,7 @@ import {
   setupPeriodicBackup,
   getCellKey,
 } from '../utils/liveblocksSync';
+import { SendToRoomButton } from './SendToRoomButton';
 
 /**
  * 실시간 협업 스프레드시트 컴포넌트
@@ -20,6 +21,7 @@ import {
 export function CollaborativeSpreadsheet({
   currentWorkbookId,
   currentWorksheetId,
+  currentRoomId,
   initDesigner,
 }) {
   const room = useRoom();
@@ -28,6 +30,7 @@ export function CollaborativeSpreadsheet({
   const [spreadInstance, setSpreadInstance] = useState(null);
   const backupTimerRef = useRef(null);
   const isLoadingRef = useRef(false);
+  const userId = room.getSelf()?.id || 'unknown';
 
   // Liveblocks Storage에 셀 업데이트하는 함수
   const updateCell = useMutation(({ storage }, row, col, value, formula = null) => {
@@ -117,14 +120,50 @@ export function CollaborativeSpreadsheet({
         updateCell(row, col, value, formula);
       });
 
-      // 4단계: 주기적 SQLite 백업 설정 (30초마다)
-      console.log('💾 Step 4: Setting up periodic backup...');
+      // 4단계: 주기적으로 서버에서 대기 중인 전송 확인 (폴링)
+      console.log('📡 Step 4: Setting up transfer polling...');
+      const transferPollingInterval = setInterval(async () => {
+        try {
+          const response = await fetch(`http://localhost:5000/api/rooms/${currentRoomId}/pending-transfers`);
+          const { transfers } = await response.json();
+
+          if (transfers && transfers.length > 0) {
+            console.log(`📥 Received ${transfers.length} pending transfer(s)`);
+
+            transfers.forEach(transfer => {
+              console.log(`   Processing transfer from ${transfer.sourceRoom}`);
+              console.log(`   Cells: ${transfer.data.cells.length}`);
+
+              // Liveblocks Storage에 데이터 추가
+              transfer.data.cells.forEach(cell => {
+                const targetRow = cell.relativeRow; // 상대 위치 그대로 사용
+                const targetCol = cell.relativeCol;
+                updateCell(targetRow, targetCol, cell.value, cell.formula);
+              });
+
+              console.log(`✓ Applied ${transfer.data.cells.length} cells from transfer`);
+            });
+          }
+        } catch (error) {
+          console.error('Polling error:', error);
+        }
+      }, 2000); // 2초마다 확인
+
+      // 정리 함수에 폴링 타이머 추가
+      backupTimerRef.current = {
+        backup: null,
+        polling: transferPollingInterval,
+      };
+
+      // 5단계: 주기적 SQLite 백업 설정 (30초마다)
+      console.log('💾 Step 5: Setting up periodic backup...');
       if (liveCells) {
-        backupTimerRef.current = setupPeriodicBackup(
+        const backupInterval = setupPeriodicBackup(
           liveCells,
           currentWorksheetId,
           30000 // 30초
         );
+        backupTimerRef.current.backup = backupInterval;
       }
 
       setIsInitialized(true);
@@ -209,8 +248,13 @@ export function CollaborativeSpreadsheet({
     return () => {
       // 백업 타이머 정지
       if (backupTimerRef.current) {
-        clearInterval(backupTimerRef.current);
-        console.log('⏹️ Periodic backup stopped');
+        if (backupTimerRef.current.backup) {
+          clearInterval(backupTimerRef.current.backup);
+        }
+        if (backupTimerRef.current.polling) {
+          clearInterval(backupTimerRef.current.polling);
+        }
+        console.log('⏹️ Timers stopped');
       }
 
       // 최종 백업
@@ -224,9 +268,33 @@ export function CollaborativeSpreadsheet({
   }, [liveCells, currentWorksheetId]);
 
   return (
-    <Designer
-      styleInfo={{ width: "1500px", height: "90vh" }}
-      designerInitialized={handleDesignerInitialized}
-    />
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
+      {/* 크로스 룸 전송 버튼 */}
+      <div
+        style={{
+          padding: '8px 12px',
+          background: '#f9f9f9',
+          borderBottom: '1px solid #ddd',
+          display: 'flex',
+          gap: '12px',
+          alignItems: 'center',
+        }}
+      >
+        <SendToRoomButton
+          spreadInstance={spreadInstance}
+          currentRoomId={currentRoomId}
+          userId={userId}
+        />
+        <span style={{ fontSize: '12px', color: '#666' }}>
+          셀 영역을 선택한 후 다른 방으로 전송할 수 있습니다
+        </span>
+      </div>
+
+      {/* Designer */}
+      <Designer
+        styleInfo={{ width: "1500px", height: "calc(90vh - 50px)" }}
+        designerInitialized={handleDesignerInitialized}
+      />
+    </div>
   );
 }

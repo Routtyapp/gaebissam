@@ -24,6 +24,8 @@ import { LiveMap } from "@liveblocks/client";
 // Custom Components
 import { Room } from "./Room";
 import { CollaborativeSpreadsheet } from "./components/CollaborativeSpreadsheet";
+import { IndependentSpreadsheet } from "./components/IndependentSpreadsheet";
+import { CollaborationControl } from "./components/CollaborationControl";
 
 // API & Utils
 import { saveCell, saveWorkbook, loadWorkbook } from "./api/spreadsheetApi";
@@ -41,6 +43,16 @@ function App() {
   const [changeSheetName, setChangeSheetName] = useState("Sheet1");
   const [currentWorksheetId, setCurrentWorksheetId] = useState(1); // 임시 워크시트 ID
   const [currentWorkbookId, setCurrentWorkbookId] = useState(1); // 현재 워크북 ID (기본값: 1)
+
+  // 협업 모드 상태 관리
+  const [isCollaborative, setIsCollaborative] = useState(() => {
+    // localStorage에서 이전 설정 불러오기
+    return localStorage.getItem('collaboration-mode') === 'true';
+  });
+  const [roomId, setRoomId] = useState(() => {
+    // localStorage에서 마지막 방 번호 불러오기
+    return localStorage.getItem('last-room-id') || null;
+  });
 
   const sheetTabColorRef = useRef(null);
   const startSheetIndexRef = useRef(null);
@@ -489,288 +501,87 @@ function App() {
     }
   };
 
-  // 워크북 ID 기반의 Room ID 생성
-  const roomId = getWorkbookRoomId(currentWorkbookId);
+  // 협업 모드 제어 함수들
+  const handleJoinRoom = (newRoomId) => {
+    setRoomId(newRoomId);
+    setIsCollaborative(true);
+
+    // localStorage에 저장
+    localStorage.setItem('collaboration-mode', 'true');
+    localStorage.setItem('last-room-id', newRoomId);
+
+    console.log(`🌐 Joining collaborative room: ${newRoomId}`);
+    console.log(`   Room ID will be: ${newRoomId}`); // 디버그
+  };
+
+  const handleLeaveRoom = () => {
+    if (window.confirm('협업을 종료하시겠습니까? 데이터는 SQLite에 저장됩니다.')) {
+      setIsCollaborative(false);
+
+      // localStorage 업데이트
+      localStorage.setItem('collaboration-mode', 'false');
+
+      console.log('📝 Switched to independent mode');
+    }
+  };
+
+  const handleToggleCollaboration = () => {
+    if (isCollaborative) {
+      handleLeaveRoom();
+    } else {
+      const newRoomId = prompt('방 이름을 입력하세요:');
+      if (newRoomId) {
+        handleJoinRoom(newRoomId);
+      }
+    }
+  };
 
   return (
-    <RoomProvider
-      id={roomId}
-      initialPresence={{
-        cursor: null,
-        selectedCell: null,
-      }}
-      initialStorage={() => ({
-        cells: new LiveMap(),
-      })}
-    >
-      <ClientSideSuspense fallback={<div>Loading...</div>}>
-        <Room workbookId={currentWorkbookId} />
-        <CollaborativeSpreadsheet
+    <div style={{ display: 'flex', flexDirection: 'column', height: '100vh' }}>
+      {/* 협업 모드 제어 패널 */}
+      <CollaborationControl
+        isCollaborative={isCollaborative}
+        currentRoomId={roomId}
+        onToggleCollaboration={handleToggleCollaboration}
+        onJoinRoom={handleJoinRoom}
+        onLeaveRoom={handleLeaveRoom}
+      />
+
+      {/* 협업 모드: Liveblocks 연결 */}
+      {isCollaborative && roomId ? (
+        <>
+          {/* 디버그: 현재 연결된 Room ID 표시 */}
+          {console.log(`🔗 Rendering RoomProvider with ID: ${roomId}`)}
+          <RoomProvider
+            id={roomId}
+            initialPresence={{
+              cursor: null,
+              selectedCell: null,
+            }}
+            initialStorage={() => ({
+              cells: new LiveMap(),
+            })}
+          >
+          <ClientSideSuspense fallback={<div>Loading...</div>}>
+            <Room workbookId={currentWorkbookId} />
+            <CollaborativeSpreadsheet
+              currentWorkbookId={currentWorkbookId}
+              currentWorksheetId={currentWorksheetId}
+              currentRoomId={roomId}
+              initDesigner={initDesigner}
+            />
+          </ClientSideSuspense>
+        </RoomProvider>
+        </>
+      ) : (
+        /* 독립 모드: Liveblocks 없이 로컬만 */
+        <IndependentSpreadsheet
           currentWorkbookId={currentWorkbookId}
           currentWorksheetId={currentWorksheetId}
           initDesigner={initDesigner}
         />
-      </ClientSideSuspense>
-
-      {/* Old code with SpreadSheets component
-      <ClientSideSuspense fallback={<div>Loading...</div>}>
-        <div className="sample-tutorial">
-          <Room workbookId={currentWorkbookId} />
-          <div style={{ flex: 1, overflow: "hidden" }}>
-            <SpreadSheets
-              workbookInitialized={(spread) => initSpread(spread)}
-              hostStyle={hostStyle}
-            >
-              <Worksheet name="Sheet1"></Worksheet>
-              <Worksheet name="Sheet2"></Worksheet>
-              <Worksheet name="Sheet3"></Worksheet>
-            </SpreadSheets>
-          </div>
-
-          <div className="options-container">
-            <div className="option-row">
-              <label>
-                <strong>데이터베이스 저장/로드</strong>
-              </label>
-            </div>
-
-            <div className="option-row">
-              <input
-                type="button"
-                value="DB에 저장"
-                className="action-btn"
-                onClick={handleSaveToDatabase}
-              />
-              <input
-                type="button"
-                value="DB에서 로드"
-                className="action-btn"
-                onClick={handleLoadFromDatabase}
-              />
-              <p>
-                실시간으로 셀 변경 내용이 자동으로 데이터베이스에 저장됩니다.
-              </p>
-            </div>
-
-            <hr />
-
-            <div className="option-row">
-              <label>
-                <strong>파일 입출력</strong>
-              </label>
-            </div>
-
-            <div className="option-row">
-              <label>파일 열기:</label>
-              <input
-                type="file"
-                ref={fileInputRef}
-                accept=".sjs,.xlsx,.xlsm,.xltm,.ssjson,.json,.csv"
-                onChange={handleFileOpen}
-                style={{ fontSize: "12px", marginBottom: "8px" }}
-              />
-            </div>
-
-            <div className="option-row">
-              <label>파일 이름:</label>
-              <input
-                type="text"
-                ref={exportFileNameRef}
-                defaultValue="spreadsheet"
-                placeholder="파일명 입력"
-              />
-            </div>
-
-            <div className="option-row">
-              <input
-                type="button"
-                value="SJS 저장"
-                className="action-btn"
-                onClick={() => handleFileSave("sjs")}
-              />
-              <input
-                type="button"
-                value="Excel 내보내기"
-                className="action-btn"
-                onClick={() => handleFileSave("xlsx")}
-              />
-              <input
-                type="button"
-                value="CSV 내보내기"
-                className="action-btn"
-                onClick={() => handleFileSave("csv")}
-              />
-              <input
-                type="button"
-                value="JSON 내보내기"
-                className="action-btn"
-                onClick={() => handleFileSave("ssjson")}
-              />
-            </div>
-
-            <hr />
-
-            <div className="option-row">
-              <label>
-                <strong>워크시트 관리</strong>
-              </label>
-              <p>
-                아래 버튼을 사용하여 현재 통합 문서에서 시트를 추가, 제거 또는
-                모두 지울 수 있습니다.
-              </p>
-            </div>
-
-            <div className="option-row">
-              <input
-                type="button"
-                value="시트 추가"
-                className="action-btn"
-                onClick={handleAddSheet}
-              />
-              <input
-                type="button"
-                value="시트 제거"
-                className="action-btn"
-                onClick={handleRemoveSheet}
-              />
-              <input
-                type="button"
-                value="모든 시트 지우기"
-                className="action-btn"
-                onClick={handleClearSheets}
-              />
-            </div>
-
-            <hr />
-
-            <div className="option-row">
-              <label>
-                <strong>활성 시트 인덱스:</strong>
-              </label>
-              <input
-                type="text"
-                id="activeSheetIndex"
-                value={activeSheetIndex}
-                ref={activeSheetIndexRef}
-                onChange={(e) => setActiveSheetIndex(e.target.value)}
-              />
-              <input
-                type="button"
-                value="설정"
-                className="set-btn"
-                onClick={handleSetActiveSheetIndex}
-              />
-              <p>지정된 인덱스의 시트로 활성 시트를 전환합니다.</p>
-            </div>
-
-            <hr />
-
-            <div className="option-row">
-              <label>
-                <strong>시트 인덱스 변경</strong>
-              </label>
-              <label>시트 이름:</label>
-              <input
-                type="text"
-                id="changeSheetName"
-                value={changeSheetName}
-                onChange={(e) => setChangeSheetName(e.target.value)}
-              />
-              <label>대상 인덱스:</label>
-              <input
-                type="text"
-                id="changeSheetIndexTarget"
-                defaultValue="2"
-                ref={changeSheetIndexTargetRef}
-              />
-              <input
-                type="button"
-                value="설정"
-                className="set-btn"
-                onClick={handleChangeSheetIndex}
-              />
-            </div>
-
-            <hr />
-
-            <div className="option-row">
-              <label>
-                <strong>탭 스트립 옵션</strong>
-              </label>
-            </div>
-
-            <div className="option-row checkbox-row">
-              <input
-                type="checkbox"
-                id="newtab_show"
-                checked={showNewTab}
-                onChange={handleNewTabChange}
-              />
-              <label htmlFor="newtab_show">showNewTab</label>
-            </div>
-
-            <div className="option-row checkbox-row">
-              <input
-                type="checkbox"
-                id="tab_editable"
-                checked={tabEditable}
-                onChange={handleTabEditableChange}
-              />
-              <label htmlFor="tab_editable">tabEditable</label>
-            </div>
-
-            <div className="option-row checkbox-row">
-              <input
-                type="checkbox"
-                id="tabstrip_visible"
-                checked={tabStripVisible}
-                onChange={handleTabStripVisibleChange}
-              />
-              <label htmlFor="tabstrip_visible">tabStripVisible</label>
-            </div>
-
-            <div className="option-row checkbox-row">
-              <input
-                type="checkbox"
-                id="tabnavigation_Visible"
-                checked={tabNavigationVisible}
-                onChange={handleTabNavigationVisibleChange}
-              />
-              <label htmlFor="tabnavigation_Visible">
-                tabNavigationVisible
-              </label>
-            </div>
-
-            <div className="option-row">
-              <label>모든 시트 버튼 표시:</label>
-              <select
-                id="allSheetsButton_Visible"
-                value={allSheetsButtonVisible}
-                onChange={handleAllSheetsButtonVisibleChange}
-              >
-                <option value="2">auto</option>
-                <option value="0">hidden</option>
-                <option value="1">show</option>
-              </select>
-            </div>
-
-            <div className="option-row">
-              <label>탭 스트립 위치:</label>
-              <select
-                id="tabstrip_position"
-                value={tabStripPosition}
-                onChange={handleTabStripPositionChange}
-              >
-                <option value="0">bottom</option>
-                <option value="1">top</option>
-                <option value="2">left</option>
-                <option value="3">right</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      </ClientSideSuspense> */}
-    </RoomProvider>
+      )}
+    </div>
   );
 }
 

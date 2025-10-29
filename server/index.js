@@ -129,9 +129,20 @@ app.post('/api/liveblocks-auth', async (req, res) => {
     // Backward compatibility: Allow access to default room
     session.allow('my-spreadsheet-room', session.FULL_ACCESS);
 
-    // Development mode: Allow access to all workbooks for testing
+    // Development mode: Allow access to all rooms for testing
     if (process.env.NODE_ENV !== 'production') {
+      // 모든 워크북 접근 허용
       session.allow('workbook:*', session.FULL_ACCESS);
+
+      // 사용자가 입력한 임의의 방 이름 모두 허용
+      session.allow('*', session.FULL_ACCESS);
+    }
+
+    // Production: 요청된 room에 대한 접근 허용
+    // (실제 프로덕션에서는 데이터베이스에서 권한 확인 필요)
+    const { room } = req.body;
+    if (room) {
+      session.allow(room, session.FULL_ACCESS);
     }
 
     // Authorize the user and return the result
@@ -173,6 +184,79 @@ app.get('/api/workbooks/:workbookId/permissions', (req, res) => {
     { userId: 'user-1', access: 'full', userName: 'John Doe' },
     { userId: 'user-2', access: 'read', userName: 'Jane Smith' },
   ]);
+});
+
+// ============================================
+// 크로스 룸 데이터 전송 API
+// ============================================
+
+// 대기 중인 전송 데이터 저장 (메모리)
+const pendingTransfers = new Map(); // roomId -> array of transfers
+
+/**
+ * 다른 방으로 선택 영역 데이터 전송
+ */
+app.post('/api/rooms/transfer', async (req, res) => {
+  try {
+    const {
+      sourceRoom,
+      targetRoom,
+      data, // extractSelectionData() 결과
+      userId,
+    } = req.body;
+
+    console.log(`📤 Transfer request: ${sourceRoom} → ${targetRoom}`);
+    console.log(`   Data: ${data.rowCount}x${data.colCount} (${data.cells.length} cells)`);
+    console.log(`   User: ${userId}`);
+
+    // 대상 방의 대기 목록에 추가
+    if (!pendingTransfers.has(targetRoom)) {
+      pendingTransfers.set(targetRoom, []);
+    }
+
+    const transfer = {
+      id: Date.now(),
+      sourceRoom,
+      data,
+      userId,
+      timestamp: Date.now(),
+    };
+
+    pendingTransfers.get(targetRoom).push(transfer);
+
+    console.log(`✓ Transfer queued for room ${targetRoom}`);
+
+    res.json({
+      success: true,
+      message: `${targetRoom}으로 데이터가 전송되었습니다.`,
+      targetRoom,
+      transferredCells: data.cells.length,
+      transferId: transfer.id,
+    });
+  } catch (error) {
+    console.error('Transfer error:', error);
+    res.status(500).json({
+      success: false,
+      error: error.message,
+    });
+  }
+});
+
+/**
+ * 특정 방의 대기 중인 전송 데이터 가져오기
+ */
+app.get('/api/rooms/:roomId/pending-transfers', (req, res) => {
+  const { roomId } = req.params;
+
+  const transfers = pendingTransfers.get(roomId) || [];
+
+  // 전송 후 삭제
+  if (transfers.length > 0) {
+    console.log(`📬 Sending ${transfers.length} pending transfers to room ${roomId}`);
+    pendingTransfers.delete(roomId);
+  }
+
+  res.json({ transfers });
 });
 
 // ============================================

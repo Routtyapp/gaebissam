@@ -147,3 +147,21 @@ input[type="file"]::file-selector-button {
 input[type="file"]::file-selector-button:hover {
   background-color: #45a049;
 }
+
+/* Live Cursors Styles */
+.cursor {
+  position: absolute;
+  top: 0;
+  left: 0;
+}
+
+#cursors-container {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100vw;
+  height: 100vh;
+  pointer-events: none;
+  z-index: 9999;
+  overflow: hidden;
+}

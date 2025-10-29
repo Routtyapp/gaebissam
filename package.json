@@ -3,23 +3,44 @@
   "version": "0.1.0",
   "private": true,
   "dependencies": {
+    "@liveblocks/client": "^3.9.1",
+    "@liveblocks/node": "^3.9.1",
+    "@liveblocks/react": "^3.9.1",
+    "@mescius/spread-excelio": "^18.2.3",
     "@mescius/spread-sheets": "^18.2.3",
+    "@mescius/spread-sheets-barcode": "^18.2.3",
+    "@mescius/spread-sheets-charts": "^18.2.3",
+    "@mescius/spread-sheets-designer": "^18.2.3",
+    "@mescius/spread-sheets-designer-react": "^18.2.3",
+    "@mescius/spread-sheets-designer-resources-ko": "^18.2.3",
     "@mescius/spread-sheets-io": "^18.2.3",
+    "@mescius/spread-sheets-languagepackages": "^18.2.3",
+    "@mescius/spread-sheets-pdf": "^18.2.3",
+    "@mescius/spread-sheets-pivot-addon": "^18.2.3",
+    "@mescius/spread-sheets-print": "^18.2.3",
     "@mescius/spread-sheets-react": "^18.2.3",
+    "@mescius/spread-sheets-shapes": "^18.2.3",
+    "@mescius/spread-sheets-tablesheet": "^18.2.3",
     "@testing-library/dom": "^10.4.1",
     "@testing-library/jest-dom": "^6.9.1",
     "@testing-library/react": "^16.3.0",
     "@testing-library/user-event": "^13.5.0",
+    "cors": "^2.8.5",
+    "dotenv": "^17.2.3",
+    "express": "^5.1.0",
     "react": "^19.2.0",
     "react-dom": "^19.2.0",
     "react-scripts": "5.0.1",
+    "sqlite3": "^5.1.7",
     "web-vitals": "^2.1.4"
   },
   "scripts": {
     "start": "react-scripts start",
     "build": "react-scripts build",
     "test": "react-scripts test",
-    "eject": "react-scripts eject"
+    "eject": "react-scripts eject",
+    "server": "node server/index.js",
+    "dev": "concurrently \"npm run server\" \"npm start\""
   },
   "eslintConfig": {
     "extends": [
@@ -38,5 +59,8 @@
       "last 1 firefox version",
       "last 1 safari version"
     ]
+  },
+  "devDependencies": {
+    "concurrently": "^9.2.1"
   }
 }

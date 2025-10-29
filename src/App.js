@@ -34,9 +34,6 @@ function App() {
   let initSpread = function (spread) {
     setSpreadInstance(spread);
 
-    // 3개의 시트 생성
-    spread.setSheetCount(3);
-
     // 활성 시트 변경 이벤트 리스너 추가
     spread.bind(GC.Spread.Sheets.Events.ActiveSheetChanged, function(e, args) {
       const currentIndex = spread.getActiveSheetIndex();
@@ -346,7 +343,9 @@ function App() {
     <div className="sample-tutorial">
       <div style={{ flex: 1, overflow: 'hidden' }}>
         <SpreadSheets workbookInitialized={spread => initSpread(spread)} hostStyle={hostStyle}>
-          <Worksheet></Worksheet>
+          <Worksheet name="Sheet1"></Worksheet>
+          <Worksheet name="Sheet2"></Worksheet>
+          <Worksheet name="Sheet3"></Worksheet>
         </SpreadSheets>
       </div>
 

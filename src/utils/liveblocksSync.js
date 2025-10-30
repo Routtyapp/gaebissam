@@ -5,9 +5,10 @@
  * 1. 워크북 열기: Supabase → Liveblocks Storage 로드
  * 2. 실시간 편집: Liveblocks Storage 사용 (즉시 동기화)
  * 3. 주기적 백업: Liveblocks Storage → Supabase 저장
+ * 1.23123
  */
 
-import { getCells, saveCellsBatch } from '../api/spreadsheetApi';
+import { getCells, saveCellsBatch } from "../api/spreadsheetApi";
 
 /**
  * SQLite에서 셀 데이터를 가져와서 Liveblocks Storage에 로드
@@ -23,14 +24,14 @@ export async function loadCellsFromDatabase(worksheetId) {
     const cells = await getCells(worksheetId);
 
     if (!cells || cells.length === 0) {
-      console.log('No cells found in database');
+      console.log("No cells found in database");
       return [];
     }
 
     console.log(`✓ Loaded ${cells.length} cells from database`);
     return cells;
   } catch (error) {
-    console.error('Failed to load cells from database:', error);
+    console.error("Failed to load cells from database:", error);
     throw error;
   }
 }
@@ -46,13 +47,13 @@ export function applyCellsToSpreadJS(liveCells, sheet) {
 
     // sheet 유효성 검사
     if (!sheet) {
-      console.error('Sheet is null or undefined');
+      console.error("Sheet is null or undefined");
       return 0;
     }
 
     // liveCells 유효성 검사
-    if (!liveCells || typeof liveCells.forEach !== 'function') {
-      console.error('liveCells is not a valid LiveMap');
+    if (!liveCells || typeof liveCells.forEach !== "function") {
+      console.error("liveCells is not a valid LiveMap");
       return 0;
     }
 
@@ -68,7 +69,7 @@ export function applyCellsToSpreadJS(liveCells, sheet) {
     // LiveMap의 모든 셀을 순회
     liveCells.forEach((cellData, key) => {
       try {
-        const [row, col] = key.split(',').map(Number);
+        const [row, col] = key.split(",").map(Number);
 
         // 유효한 행/열 번호 확인
         if (isNaN(row) || isNaN(col) || row < 0 || col < 0) {
@@ -77,7 +78,11 @@ export function applyCellsToSpreadJS(liveCells, sheet) {
         }
 
         // 값 설정
-        if (cellData.value !== null && cellData.value !== undefined && cellData.value !== '') {
+        if (
+          cellData.value !== null &&
+          cellData.value !== undefined &&
+          cellData.value !== ""
+        ) {
           sheet.setValue(row, col, cellData.value);
           count++;
         }
@@ -105,7 +110,7 @@ export function applyCellsToSpreadJS(liveCells, sheet) {
     console.log(`✓ Applied ${count} cells to SpreadJS`);
     return count;
   } catch (error) {
-    console.error('Failed to apply cells to SpreadJS:', error);
+    console.error("Failed to apply cells to SpreadJS:", error);
     throw error;
   }
 }
@@ -116,21 +121,27 @@ export function applyCellsToSpreadJS(liveCells, sheet) {
  * @param {number} worksheetId - 워크시트 ID
  * @param {string} roomId - 방 ID (선택적)
  */
-export async function backupCellsToDatabase(liveCells, worksheetId, roomId = null) {
+export async function backupCellsToDatabase(
+  liveCells,
+  worksheetId,
+  roomId = null
+) {
   try {
-    console.log(`💾 Backing up cells to database (room: ${roomId || 'none'})...`);
+    console.log(
+      `💾 Backing up cells to database (room: ${roomId || "none"})...`
+    );
 
     const cells = [];
 
     // LiveMap에서 모든 셀 데이터 추출
     liveCells.forEach((cellData, key) => {
-      const [row, col] = key.split(',').map(Number);
+      const [row, col] = key.split(",").map(Number);
 
       cells.push({
         worksheet_id: worksheetId,
         row_index: row,
         col_index: col,
-        value: String(cellData.value || ''),
+        value: String(cellData.value || ""),
         formula: cellData.formula,
         style: cellData.style ? JSON.stringify(cellData.style) : null,
         room_id: roomId, // room_id 추가
@@ -138,17 +149,21 @@ export async function backupCellsToDatabase(liveCells, worksheetId, roomId = nul
     });
 
     if (cells.length === 0) {
-      console.log('No cells to backup');
+      console.log("No cells to backup");
       return 0;
     }
 
     // 일괄 저장
     await saveCellsBatch(cells);
 
-    console.log(`✓ Backed up ${cells.length} cells to database (room: ${roomId || 'none'})`);
+    console.log(
+      `✓ Backed up ${cells.length} cells to database (room: ${
+        roomId || "none"
+      })`
+    );
     return cells.length;
   } catch (error) {
-    console.error('Failed to backup cells to database:', error);
+    console.error("Failed to backup cells to database:", error);
     throw error;
   }
 }
@@ -169,7 +184,7 @@ export function getCellKey(row, col) {
  * @returns {{row: number, col: number}} 행, 열 번호
  */
 export function parseCellKey(key) {
-  const [row, col] = key.split(',').map(Number);
+  const [row, col] = key.split(",").map(Number);
   return { row, col };
 }
 
@@ -181,14 +196,23 @@ export function parseCellKey(key) {
  * @param {string} roomId - 방 ID (선택적)
  * @returns {NodeJS.Timeout} 타이머 ID (clearInterval로 정지 가능)
  */
-export function setupPeriodicBackup(liveCells, worksheetId, intervalMs = 30000, roomId = null) {
-  console.log(`⏰ Setting up periodic backup every ${intervalMs / 1000} seconds (room: ${roomId || 'none'})`);
+export function setupPeriodicBackup(
+  liveCells,
+  worksheetId,
+  intervalMs = 30000,
+  roomId = null
+) {
+  console.log(
+    `⏰ Setting up periodic backup every ${intervalMs / 1000} seconds (room: ${
+      roomId || "none"
+    })`
+  );
 
   const timerId = setInterval(async () => {
     try {
       await backupCellsToDatabase(liveCells, worksheetId, roomId);
     } catch (error) {
-      console.error('Periodic backup failed:', error);
+      console.error("Periodic backup failed:", error);
     }
   }, intervalMs);
 

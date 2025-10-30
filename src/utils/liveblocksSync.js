@@ -111,13 +111,14 @@ export function applyCellsToSpreadJS(liveCells, sheet) {
 }
 
 /**
- * Liveblocks Storage의 셀 데이터를 SQLite에 백업
+ * Liveblocks Storage의 셀 데이터를 Supabase에 백업
  * @param {LiveMap} liveCells - Liveblocks LiveMap 객체
  * @param {number} worksheetId - 워크시트 ID
+ * @param {string} roomId - 방 ID (선택적)
  */
-export async function backupCellsToDatabase(liveCells, worksheetId) {
+export async function backupCellsToDatabase(liveCells, worksheetId, roomId = null) {
   try {
-    console.log(`💾 Backing up cells to database...`);
+    console.log(`💾 Backing up cells to database (room: ${roomId || 'none'})...`);
 
     const cells = [];
 
@@ -132,6 +133,7 @@ export async function backupCellsToDatabase(liveCells, worksheetId) {
         value: String(cellData.value || ''),
         formula: cellData.formula,
         style: cellData.style ? JSON.stringify(cellData.style) : null,
+        room_id: roomId, // room_id 추가
       });
     });
 
@@ -143,7 +145,7 @@ export async function backupCellsToDatabase(liveCells, worksheetId) {
     // 일괄 저장
     await saveCellsBatch(cells);
 
-    console.log(`✓ Backed up ${cells.length} cells to database`);
+    console.log(`✓ Backed up ${cells.length} cells to database (room: ${roomId || 'none'})`);
     return cells.length;
   } catch (error) {
     console.error('Failed to backup cells to database:', error);
@@ -176,14 +178,15 @@ export function parseCellKey(key) {
  * @param {LiveMap} liveCells - Liveblocks LiveMap 객체
  * @param {number} worksheetId - 워크시트 ID
  * @param {number} intervalMs - 백업 간격 (밀리초, 기본 30초)
+ * @param {string} roomId - 방 ID (선택적)
  * @returns {NodeJS.Timeout} 타이머 ID (clearInterval로 정지 가능)
  */
-export function setupPeriodicBackup(liveCells, worksheetId, intervalMs = 30000) {
-  console.log(`⏰ Setting up periodic backup every ${intervalMs / 1000} seconds`);
+export function setupPeriodicBackup(liveCells, worksheetId, intervalMs = 30000, roomId = null) {
+  console.log(`⏰ Setting up periodic backup every ${intervalMs / 1000} seconds (room: ${roomId || 'none'})`);
 
   const timerId = setInterval(async () => {
     try {
-      await backupCellsToDatabase(liveCells, worksheetId);
+      await backupCellsToDatabase(liveCells, worksheetId, roomId);
     } catch (error) {
       console.error('Periodic backup failed:', error);
     }

@@ -2,10 +2,10 @@ require('dotenv').config();
 const express = require('express');
 const cors = require('cors');
 const { Liveblocks } = require('@liveblocks/node');
-const db = require('./db');
+const dbOps = require('./db-operations');
 
 const app = express();
-const PORT = process.env.PORT || 5000;
+const PORT = process.env.SERVER_PORT || process.env.PORT || 5000;
 
 // Debug: Check if environment variables are loaded
 console.log('=== Environment Variables Check ===');
@@ -29,6 +29,30 @@ app.use(cors());
 app.use(express.json());
 
 // ============================================
+// 기본 라우트
+// ============================================
+
+// 헬스체크 엔드포인트
+app.get('/', (req, res) => {
+  res.json({
+    status: 'ok',
+    message: 'Spreadsheet API Server',
+    version: '2.0.0',
+    database: 'Supabase PostgreSQL',
+    features: ['LiveBlocks', 'Collaborative Editing'],
+  });
+});
+
+// API 상태 확인
+app.get('/api/health', (req, res) => {
+  res.json({
+    status: 'healthy',
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
+// ============================================
 // Liveblocks 인증 API
 // ============================================
 
@@ -37,26 +61,13 @@ app.use(express.json());
  * 실제 프로덕션에서는 데이터베이스를 조회하여 권한을 확인해야 합니다
  */
 async function getUserWorkbookPermissions(userId) {
-  // TODO: 데이터베이스에서 사용자의 워크북 권한 조회
-  // 현재는 모든 사용자에게 모든 워크북 접근 권한 부여 (개발 환경용)
-
-  return new Promise((resolve) => {
-    db.all('SELECT id FROM workbooks', [], (err, rows) => {
-      if (err) {
-        console.error('워크북 조회 오류:', err);
-        resolve([]);
-        return;
-      }
-
-      // 모든 워크북에 대한 전체 접근 권한 반환
-      const permissions = rows.map(workbook => ({
-        workbookId: workbook.id,
-        access: 'full', // 'full' | 'read' | 'none'
-      }));
-
-      resolve(permissions);
-    });
-  });
+  // Supabase에서 사용자의 워크북 권한 조회
+  try {
+    return await dbOps.getUserWorkbookPermissions(userId);
+  } catch (error) {
+    console.error('워크북 권한 조회 오류:', error);
+    return [];
+  }
 }
 
 /**
@@ -264,44 +275,43 @@ app.get('/api/rooms/:roomId/pending-transfers', (req, res) => {
 // ============================================
 
 // 워크북 생성
-app.post('/api/workbooks', (req, res) => {
-  const { name } = req.body;
-
-  db.run(
-    'INSERT INTO workbooks (name) VALUES (?)',
-    [name],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: err.message });
-      }
-      res.json({ id: this.lastID, name });
-    }
-  );
+app.post('/api/workbooks', async (req, res) => {
+  try {
+    const { name } = req.body;
+    const workbook = await dbOps.createWorkbook(name);
+    res.json(workbook);
+  } catch (error) {
+    console.error('워크북 생성 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // 모든 워크북 조회
-app.get('/api/workbooks', (req, res) => {
-  db.all('SELECT * FROM workbooks ORDER BY updated_at DESC', [], (err, rows) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
-    }
-    res.json(rows);
-  });
+app.get('/api/workbooks', async (req, res) => {
+  try {
+    const workbooks = await dbOps.getAllWorkbooks();
+    res.json(workbooks);
+  } catch (error) {
+    console.error('워크북 조회 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // 특정 워크북 조회
-app.get('/api/workbooks/:id', (req, res) => {
-  const { id } = req.params;
+app.get('/api/workbooks/:id', async (req, res) => {
+  try {
+    const { id } = req.params;
+    const workbook = await dbOps.getWorkbookById(id);
 
-  db.get('SELECT * FROM workbooks WHERE id = ?', [id], (err, row) => {
-    if (err) {
-      return res.status(500).json({ error: err.message });
-    }
-    if (!row) {
+    if (!workbook) {
       return res.status(404).json({ error: '워크북을 찾을 수 없습니다.' });
     }
-    res.json(row);
-  });
+
+    res.json(workbook);
+  } catch (error) {
+    console.error('워크북 조회 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ============================================
@@ -309,35 +319,27 @@ app.get('/api/workbooks/:id', (req, res) => {
 // ============================================
 
 // 워크시트 생성
-app.post('/api/worksheets', (req, res) => {
-  const { workbook_id, name, sheet_index } = req.body;
-
-  db.run(
-    'INSERT INTO worksheets (workbook_id, name, sheet_index) VALUES (?, ?, ?)',
-    [workbook_id, name, sheet_index],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: err.message });
-      }
-      res.json({ id: this.lastID, workbook_id, name, sheet_index });
-    }
-  );
+app.post('/api/worksheets', async (req, res) => {
+  try {
+    const { workbook_id, name, sheet_index } = req.body;
+    const worksheet = await dbOps.createWorksheet(workbook_id, name, sheet_index);
+    res.json(worksheet);
+  } catch (error) {
+    console.error('워크시트 생성 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // 워크북의 모든 워크시트 조회
-app.get('/api/workbooks/:workbookId/worksheets', (req, res) => {
-  const { workbookId } = req.params;
-
-  db.all(
-    'SELECT * FROM worksheets WHERE workbook_id = ? ORDER BY sheet_index',
-    [workbookId],
-    (err, rows) => {
-      if (err) {
-        return res.status(500).json({ error: err.message });
-      }
-      res.json(rows);
-    }
-  );
+app.get('/api/workbooks/:workbookId/worksheets', async (req, res) => {
+  try {
+    const { workbookId } = req.params;
+    const worksheets = await dbOps.getWorksheetsByWorkbook(workbookId);
+    res.json(worksheets);
+  } catch (error) {
+    console.error('워크시트 조회 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ============================================
@@ -345,164 +347,114 @@ app.get('/api/workbooks/:workbookId/worksheets', (req, res) => {
 // ============================================
 
 // 셀 데이터 저장/업데이트 (단일)
-app.post('/api/cells', (req, res) => {
-  const { worksheet_id, row_index, col_index, value, formula, style } = req.body;
+app.post('/api/cells', async (req, res) => {
+  try {
+    const { worksheet_id, row_index, col_index, value, formula, style, room_id } = req.body;
 
-  db.run(
-    `INSERT INTO cells (worksheet_id, row_index, col_index, value, formula, style, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-     ON CONFLICT(worksheet_id, row_index, col_index)
-     DO UPDATE SET
-       value = excluded.value,
-       formula = excluded.formula,
-       style = excluded.style,
-       updated_at = CURRENT_TIMESTAMP`,
-    [worksheet_id, row_index, col_index, value, formula, style],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: err.message });
-      }
+    // 셀 데이터 저장/업데이트 (room_id 포함)
+    const cell = await dbOps.upsertCell(
+      worksheet_id,
+      row_index,
+      col_index,
+      value,
+      formula,
+      style,
+      room_id
+    );
 
-      // 변경 이력 저장
-      db.run(
-        `INSERT INTO change_history (worksheet_id, row_index, col_index, new_value, user_id)
-         VALUES (?, ?, ?, ?, ?)`,
-        [worksheet_id, row_index, col_index, value, 'system'],
-        (historyErr) => {
-          if (historyErr) {
-            console.error('변경 이력 저장 오류:', historyErr.message);
-          }
-        }
-      );
-
-      res.json({
-        id: this.lastID,
+    // 변경 이력 저장 (에러가 발생해도 계속 진행)
+    try {
+      await dbOps.addChangeHistory(
         worksheet_id,
         row_index,
         col_index,
+        null, // old_value
         value,
-        formula,
-        style
-      });
+        'system'
+      );
+    } catch (historyErr) {
+      console.error('변경 이력 저장 오류:', historyErr);
     }
-  );
+
+    res.json(cell);
+  } catch (error) {
+    console.error('셀 저장 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // 셀 데이터 대량 저장/업데이트
-app.post('/api/cells/batch', (req, res) => {
-  const { cells } = req.body;
+app.post('/api/cells/batch', async (req, res) => {
+  try {
+    const { cells } = req.body;
 
-  if (!Array.isArray(cells) || cells.length === 0) {
-    return res.status(400).json({ error: '유효한 셀 데이터 배열이 필요합니다.' });
-  }
-
-  const stmt = db.prepare(
-    `INSERT INTO cells (worksheet_id, row_index, col_index, value, formula, style, updated_at)
-     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
-     ON CONFLICT(worksheet_id, row_index, col_index)
-     DO UPDATE SET
-       value = excluded.value,
-       formula = excluded.formula,
-       style = excluded.style,
-       updated_at = CURRENT_TIMESTAMP`
-  );
-
-  // serialize() 대신 직접 트랜잭션 관리
-  db.run('BEGIN TRANSACTION', (beginErr) => {
-    if (beginErr) {
-      return res.status(500).json({ error: beginErr.message });
+    if (!Array.isArray(cells) || cells.length === 0) {
+      return res.status(400).json({ error: '유효한 셀 데이터 배열이 필요합니다.' });
     }
 
-    let completed = 0;
-    let hasError = false;
+    // Supabase는 upsert가 트랜잭션 방식으로 처리됨
+    const result = await dbOps.upsertCellsBatch(cells);
 
-    cells.forEach((cell, index) => {
-      stmt.run(
-        [
-          cell.worksheet_id,
-          cell.row_index,
-          cell.col_index,
-          cell.value,
-          cell.formula || null,
-          cell.style || null
-        ],
-        (err) => {
-          if (err && !hasError) {
-            hasError = true;
-            db.run('ROLLBACK');
-            return res.status(500).json({ error: err.message });
-          }
-
-          completed++;
-
-          // 모든 셀 처리 완료
-          if (completed === cells.length && !hasError) {
-            stmt.finalize((finalizeErr) => {
-              if (finalizeErr) {
-                db.run('ROLLBACK');
-                return res.status(500).json({ error: finalizeErr.message });
-              }
-
-              db.run('COMMIT', (commitErr) => {
-                if (commitErr) {
-                  return res.status(500).json({ error: commitErr.message });
-                }
-                res.json({ message: `${cells.length}개의 셀이 저장되었습니다.` });
-              });
-            });
-          }
-        }
-      );
+    res.json({
+      message: `${result.length}개의 셀이 저장되었습니다.`,
+      count: result.length
     });
-  });
+  } catch (error) {
+    console.error('셀 배치 저장 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // 워크시트의 모든 셀 데이터 조회
-app.get('/api/worksheets/:worksheetId/cells', (req, res) => {
-  const { worksheetId } = req.params;
+app.get('/api/worksheets/:worksheetId/cells', async (req, res) => {
+  try {
+    const { worksheetId } = req.params;
+    const { room_id } = req.query; // 쿼리 파라미터로 room_id 받기
+    const cells = await dbOps.getCellsByWorksheet(worksheetId, room_id);
+    res.json(cells);
+  } catch (error) {
+    console.error('셀 조회 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
+});
 
-  db.all(
-    'SELECT * FROM cells WHERE worksheet_id = ? ORDER BY row_index, col_index',
-    [worksheetId],
-    (err, rows) => {
-      if (err) {
-        return res.status(500).json({ error: err.message });
-      }
-      res.json(rows);
-    }
-  );
+// 특정 방(room)의 모든 셀 조회
+app.get('/api/rooms/:roomId/cells', async (req, res) => {
+  try {
+    const { roomId } = req.params;
+    const cells = await dbOps.getCellsByRoom(roomId);
+    res.json(cells);
+  } catch (error) {
+    console.error('방 셀 조회 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // 특정 셀 데이터 조회
-app.get('/api/cells/:worksheetId/:row/:col', (req, res) => {
-  const { worksheetId, row, col } = req.params;
-
-  db.get(
-    'SELECT * FROM cells WHERE worksheet_id = ? AND row_index = ? AND col_index = ?',
-    [worksheetId, row, col],
-    (err, row) => {
-      if (err) {
-        return res.status(500).json({ error: err.message });
-      }
-      res.json(row || null);
-    }
-  );
+app.get('/api/cells/:worksheetId/:row/:col', async (req, res) => {
+  try {
+    const { worksheetId, row, col } = req.params;
+    const cell = await dbOps.getCellByPosition(worksheetId, row, col);
+    res.json(cell || null);
+  } catch (error) {
+    console.error('셀 조회 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // 셀 데이터 삭제
-app.delete('/api/cells/:worksheetId/:row/:col', (req, res) => {
-  const { worksheetId, row, col } = req.params;
-
-  db.run(
-    'DELETE FROM cells WHERE worksheet_id = ? AND row_index = ? AND col_index = ?',
-    [worksheetId, row, col],
-    function(err) {
-      if (err) {
-        return res.status(500).json({ error: err.message });
-      }
-      res.json({ message: '셀이 삭제되었습니다.', changes: this.changes });
-    }
-  );
+app.delete('/api/cells/:worksheetId/:row/:col', async (req, res) => {
+  try {
+    const { worksheetId, row, col } = req.params;
+    const result = await dbOps.deleteCell(worksheetId, row, col);
+    res.json({
+      message: '셀이 삭제되었습니다.',
+      deleted: result.length > 0
+    });
+  } catch (error) {
+    console.error('셀 삭제 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ============================================
@@ -510,20 +462,16 @@ app.delete('/api/cells/:worksheetId/:row/:col', (req, res) => {
 // ============================================
 
 // 워크시트의 변경 이력 조회
-app.get('/api/worksheets/:worksheetId/history', (req, res) => {
-  const { worksheetId } = req.params;
-  const { limit = 100 } = req.query;
-
-  db.all(
-    'SELECT * FROM change_history WHERE worksheet_id = ? ORDER BY changed_at DESC LIMIT ?',
-    [worksheetId, limit],
-    (err, rows) => {
-      if (err) {
-        return res.status(500).json({ error: err.message });
-      }
-      res.json(rows);
-    }
-  );
+app.get('/api/worksheets/:worksheetId/history', async (req, res) => {
+  try {
+    const { worksheetId } = req.params;
+    const { limit = 100 } = req.query;
+    const history = await dbOps.getChangeHistory(worksheetId, parseInt(limit));
+    res.json(history);
+  } catch (error) {
+    console.error('변경 이력 조회 오류:', error);
+    res.status(500).json({ error: error.message });
+  }
 });
 
 // ============================================
@@ -531,16 +479,7 @@ app.get('/api/worksheets/:worksheetId/history', (req, res) => {
 // ============================================
 
 app.listen(PORT, () => {
-  console.log(`서버가 포트 ${PORT}에서 실행 중입니다.`);
-});
-
-// 정리 함수
-process.on('SIGINT', () => {
-  db.close((err) => {
-    if (err) {
-      console.error(err.message);
-    }
-    console.log('데이터베이스 연결이 종료되었습니다.');
-    process.exit(0);
-  });
+  console.log(`✅ 서버가 포트 ${PORT}에서 실행 중입니다.`);
+  console.log(`🗄️  Supabase 데이터베이스 연결됨`);
+  console.log(`🔴 LiveBlocks 인증 활성화됨`);
 });

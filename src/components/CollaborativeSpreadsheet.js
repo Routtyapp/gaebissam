@@ -32,6 +32,16 @@ export function CollaborativeSpreadsheet({
   const isLoadingRef = useRef(false);
   const userId = room.getSelf()?.id || 'unknown';
 
+  // 최신 값을 항상 참조하기 위한 ref들
+  const currentRoomIdRef = useRef(currentRoomId);
+  const currentWorksheetIdRef = useRef(currentWorksheetId);
+
+  // props가 변경될 때마다 ref 업데이트
+  useEffect(() => {
+    currentRoomIdRef.current = currentRoomId;
+    currentWorksheetIdRef.current = currentWorksheetId;
+  }, [currentRoomId, currentWorksheetId]);
+
   // Liveblocks Storage에 셀 업데이트하는 함수
   const updateCell = useMutation(({ storage }, row, col, value, formula = null) => {
     const cells = storage.get('cells');
@@ -108,8 +118,8 @@ export function CollaborativeSpreadsheet({
       // 3단계: 실시간 동기화 설정
       console.log('⚡ Step 3: Setting up real-time sync...');
 
-      // 셀 변경 이벤트 → Liveblocks Storage 업데이트
-      spread.bind(GC.Spread.Sheets.Events.CellChanged, (e, args) => {
+      // 셀 변경 이벤트 → Liveblocks Storage 업데이트 + 즉시 DB 저장
+      spread.bind(GC.Spread.Sheets.Events.CellChanged, async (e, args) => {
         const { sheet, row, col } = args;
         const value = sheet.getValue(row, col);
         const formula = sheet.getFormula(row, col);
@@ -118,6 +128,45 @@ export function CollaborativeSpreadsheet({
 
         // Liveblocks Storage 업데이트 (자동으로 다른 사용자들에게 전파됨)
         updateCell(row, col, value, formula);
+
+        // 즉시 데이터베이스에 저장 (cells 테이블 + change_history)
+        try {
+          // ref를 사용하여 최신 값 참조
+          const worksheetId = currentWorksheetIdRef.current;
+          const roomId = currentRoomIdRef.current;
+
+          console.log(`🔍 Saving cell with worksheet_id: ${worksheetId}, room_id: ${roomId}`);
+
+          // room_id가 없으면 저장하지 않음 (백업 프로세스가 처리함)
+          if (!roomId) {
+            console.warn(`⚠️ Skipping immediate save: room_id is null. Will be saved by backup process.`);
+            return;
+          }
+
+          const response = await fetch('http://localhost:5000/api/cells', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              worksheet_id: worksheetId,
+              row_index: row,
+              col_index: col,
+              value: value !== null && value !== undefined ? String(value) : '',
+              formula: formula || null,
+              style: null,
+              room_id: roomId,
+            }),
+          });
+
+          if (!response.ok) {
+            const errorData = await response.json();
+            console.error(`❌ Cell save failed: (${row}, ${col})`, errorData);
+          } else {
+            const result = await response.json();
+            console.log(`💾 Cell saved to database: (${row}, ${col})`, result);
+          }
+        } catch (dbError) {
+          console.error('Failed to save cell to database:', dbError);
+        }
       });
 
       // 4단계: 주기적으로 서버에서 대기 중인 전송 확인 (폴링)
@@ -155,13 +204,14 @@ export function CollaborativeSpreadsheet({
         polling: transferPollingInterval,
       };
 
-      // 5단계: 주기적 SQLite 백업 설정 (30초마다)
+      // 5단계: 주기적 Supabase 백업 설정 (30초마다)
       console.log('💾 Step 5: Setting up periodic backup...');
       if (liveCells) {
         const backupInterval = setupPeriodicBackup(
           liveCells,
           currentWorksheetId,
-          30000 // 30초
+          30000, // 30초
+          currentRoomId // room_id 추가
         );
         backupTimerRef.current.backup = backupInterval;
       }
@@ -261,7 +311,7 @@ export function CollaborativeSpreadsheet({
       if (liveCells && currentWorksheetId) {
         console.log('💾 Final backup before unmount...');
         import('../utils/liveblocksSync').then(({ backupCellsToDatabase }) => {
-          backupCellsToDatabase(liveCells, currentWorksheetId);
+          backupCellsToDatabase(liveCells, currentWorksheetId, currentRoomId);
         });
       }
     };

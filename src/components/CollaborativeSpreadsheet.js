@@ -14,9 +14,9 @@ import { SendToRoomButton } from './SendToRoomButton';
  * 실시간 협업 스프레드시트 컴포넌트
  *
  * 동작 흐름:
- * 1. 초기 로드: SQLite → Liveblocks Storage → SpreadJS
+ * 1. 초기 로드: Supabase → Liveblocks Storage → SpreadJS
  * 2. 실시간 편집: SpreadJS → Liveblocks Storage → 모든 사용자
- * 3. 주기적 백업: Liveblocks Storage → SQLite (30초마다)
+ * 3. 주기적 백업: Liveblocks Storage → Supabase (30초마다)
  */
 export function CollaborativeSpreadsheet({
   currentWorkbookId,
@@ -105,7 +105,7 @@ export function CollaborativeSpreadsheet({
 
       // Storage가 비어있으면 DB에서 로드
       if (liveCells && liveCells.size === 0) {
-        console.log('Storage is empty, loading from SQLite...');
+        console.log('Storage is empty, loading from Supabase...');
         await loadCellsToStorage();
       } else {
         console.log(`Storage already has ${liveCells?.size || 0} cells, skipping DB load`);

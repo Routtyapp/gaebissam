@@ -1,10 +1,10 @@
 /**
- * Liveblocks ↔ SQLite 동기화 유틸리티
+ * Liveblocks ↔ Supabase 동기화 유틸리티
  *
  * 전략:
- * 1. 워크북 열기: SQLite → Liveblocks Storage 로드
+ * 1. 워크북 열기: Supabase → Liveblocks Storage 로드
  * 2. 실시간 편집: Liveblocks Storage 사용 (즉시 동기화)
- * 3. 주기적 백업: Liveblocks Storage → SQLite 저장
+ * 3. 주기적 백업: Liveblocks Storage → Supabase 저장
  */
 
 import { getCells, saveCellsBatch } from '../api/spreadsheetApi';
